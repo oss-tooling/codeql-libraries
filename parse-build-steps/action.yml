@@ -1,0 +1,11 @@
+name: Parse Build Steps
+description: Parse custom CodeQL build steps from the .github/codeql.yml file
+author: GitHub Expert Services
+inputs:
+  build_step_name:
+    description: The key of the build step to invoke from the codeql.yml file
+  language:
+    description: The language being scanned
+runs:
+  using: node16
+  main: dist/index.js

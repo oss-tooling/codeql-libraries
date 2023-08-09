@@ -1,0 +1,141 @@
+name: CodeQL
+description: GitHub Advanced Security Code Scanning with CodeQL
+inputs:
+  build_step_name:
+    description: Name of the build step to invoke
+    required: false
+  config:
+    description: CodeQL configuration YAML
+    required: false
+    default: ''
+  config-file:
+    description: CodeQL configuration YAML
+    required: false
+    default: ''
+  debug:
+    description: Enable debug logging
+    required: false
+    default: 'false'
+  generate-csv:
+    description: Generate CSV results
+    required: false
+    default: 'false'
+  language:
+    description: Language to analyze
+    required: true
+  token:
+    description: GitHub token
+    required: true
+    default: ${{ github.token }}
+  working-directory:
+    description: The path to the working directory
+    required: false
+    default: '.'
+runs:
+  using: composite
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        config: ${{ inputs.config }}
+        config-file: ${{ inputs.config-file }}
+        debug: ${{ inputs.debug }}
+        languages: ${{ inputs.language }}
+        queries: security-and-quality
+
+    - name: Parse Build Steps
+      id: build-steps
+      uses: oss-tooling/codeql-tools/parse-build-steps@main
+      with:
+        build_step_name: ${{ inputs.build_step_name }}
+        language: ${{ inputs.language }}
+
+    - name: Build Source
+      if: steps.build-steps.outputs.result != '' && runner.os != 'Windows'
+      shell: bash
+      run: |
+        eval "$build_steps"
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        build_steps: ${{ steps.build-steps.outputs.result }}
+
+    - name: Build Source
+      if: steps.build-steps.outputs.result != '' && runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $BuildSteps = "$Env:build_steps"
+        Invoke-Expression "$BuildSteps"
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        build_steps: ${{ steps.build-steps.outputs.result }}
+
+    - name: Autobuild Source
+      if: steps.build-steps.outputs.result == ''
+      uses: github/codeql-action/autobuild@v2
+      with:
+        working-directory: ${{ inputs.working-directory }}
+
+    - name: Perform CodeQL Analysis
+      if: inputs.working-directory == '.'
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: ${{ inputs.language }}
+
+    - name: Perform CodeQL Analysis
+      if: inputs.working-directory != '.'
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: ${{ inputs.language }}-${{ inputs.working-directory }}
+
+    - name: Generate CodeQL Results CSV
+      if: inputs.generate-csv == 'true' && runner.os != 'Windows'
+      shell: bash
+      run: |
+        database_path="$temp/codeql-scan-results-$language.csv"
+        echo "Generating CodeQL Results CSV at $database_path"
+        if [[ ! -v codeql ]]; then
+          $(realpath $RUNNER_TOOL_CACHE/CodeQL/*/x64/codeql/codeql | head -n 1) database interpret-results $database --format=csv --output="$database_path"
+        else
+          codeql database interpret-results $database --format=csv --output="$database_path"
+        fi
+      env:
+        language: ${{ inputs.language }}
+        database: ${{ runner.temp }}/codeql_databases/${{ inputs.language }}
+        temp: ${{ runner.temp }}
+
+    - name: Generate CodeQL Results CSV
+      if: inputs.generate-csv == 'true' && runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $Language = "$Env:language"
+        $DatabasePath = "$Env:database"
+        $Temp = "$Env:temp"
+        $CSVPath = "$Temp\codeql-scan-results-$Language.csv"
+        Write-Output "Generating CodeQL Results CSV at $CSVPath"
+        if (Get-Command codeql -errorAction SilentlyContinue) {
+          codeql database interpret-results "$DatabasePath" --format=csv --output="$CSVPath"
+        } else {
+          $CodeQLCommand = "$((Get-ChildItem $Env:RUNNER_TOOL_CACHE\CodeQL\*\x64\codeql\codeql.exe).fullname | Select-Object -first 1)"
+          & $CodeQLCommand database interpret-results "$DatabasePath" --format=csv --output="$CSVPath"
+        }
+      env:
+        language: ${{ inputs.language }}
+        database: ${{ runner.temp }}\codeql_databases\${{ inputs.language }}
+        temp: ${{ runner.temp }}
+
+    - name: Upload Artifact
+      if: inputs.generate-csv == 'true' && runner.os != 'Windows'
+      uses: actions/upload-artifact@v3
+      with:
+        name: codeql-scan-results-${{ inputs.language }}
+        path: ${{ runner.temp }}/codeql-scan-results-${{ inputs.language }}.csv
+
+    - name: Upload Artifact
+      if: inputs.generate-csv == 'true' && runner.os == 'Windows'
+      uses: actions/upload-artifact@v3
+      with:
+        name: codeql-scan-results-${{ inputs.language }}
+        path: ${{ runner.temp }}\codeql-scan-results-${{ inputs.language }}.csv

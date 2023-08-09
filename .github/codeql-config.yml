@@ -1,0 +1,9 @@
+paths-ignore:
+  - configure-codeql/dist
+  - emass-promotion/dist
+  - parse-build-steps/dist
+  - upload-database/dist
+  - validate-emass-json/dist
+  - validate-monorepo-access/dist
+  - verify-scans/dist
+  - dist

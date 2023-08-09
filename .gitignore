@@ -1,0 +1,11 @@
+codeql/
+node_modules/
+tmp/
+
+script.sh
+test.js
+test.sh
+
+**/.env
+**/.envrc
+*.pem
